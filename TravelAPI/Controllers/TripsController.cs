@@ -4,6 +4,7 @@ using TravelAPI.Services.Abstractions;
 
 namespace TravelAPI.Controllers;
 
+[ApiController]
 public class TripsController : ControllerBase
 {
     private readonly ITripService _tripService;
@@ -13,7 +14,7 @@ public class TripsController : ControllerBase
         _tripService = tripService;
     }
 
-    [HttpGet]
+    [HttpGet("/api/trips")]
     [ProducesResponseType(typeof(ICollection<Trip>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetAllAsync(CancellationToken cancellationToken)

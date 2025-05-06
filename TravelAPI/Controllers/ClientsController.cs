@@ -99,4 +99,13 @@ public class ClientsController : ControllerBase
             StatusCode = statusCode
         };
     }
+    
+    [HttpDelete("api/clients/{clientId:int}/trips/{tripId:int}")]
+    public async Task<IActionResult> DeleteClientRegistration([FromRoute] int clientId, [FromRoute] int tripId,
+        CancellationToken cancellationToken)
+    {
+        var success = await _tripService.DeleteClientRegistration(clientId, tripId, cancellationToken);
+        if (!success) return NotFound("No such ClientTrip was found");
+        return NoContent();
+    }
 }

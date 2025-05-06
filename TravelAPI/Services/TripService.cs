@@ -21,15 +21,16 @@ public class TripService : ITripService
 
     public async ValueTask<bool> UpdateClientTripAsync(int clientId, int tripId, CancellationToken cancellationToken)
     {
-        ValidateClientExistsAsync(clientId, cancellationToken);
-        ValidateTripExistsAsync(tripId, cancellationToken);
+        await ValidateClientExistsAsync(clientId, cancellationToken);
+        await ValidateTripExistsAsync(tripId, cancellationToken);
+        await ValidateNoSuchClientTripExistsAsync(clientId, tripId, cancellationToken);
 
         const string peopleRegisteredQuery = """
-                                                SELECT COUNT(*) FROM ClientTrip WHERE ClientTrip.IdTrip == @tripId 
+                                                SELECT COUNT(*) FROM Client_Trip WHERE Client_Trip.IdTrip = @tripId 
                                              """;
 
         const string maxPeopleQuery = """
-                                        SELECT MaxPeople FROM Trip WHERE Trip.IdTrip == @tripId
+                                        SELECT MaxPeople FROM Trip WHERE Trip.IdTrip = @tripId
                                       """;
         
         const string addClientTripQuery = """
@@ -47,20 +48,21 @@ public class TripService : ITripService
                     peopleRegisteredCommand.Parameters.AddWithValue("@tripId", tripId);
                     maxPeopleCommand.Parameters.AddWithValue("@tripId", tripId);
                     
-                    var currentNumber = Convert.ToInt32(peopleRegisteredCommand.ExecuteScalarAsync(cancellationToken));
-                    var maxNumber = Convert.ToInt32(maxPeopleCommand.ExecuteScalarAsync(cancellationToken));
+                    var currentNumber = Convert.ToInt32(await peopleRegisteredCommand.ExecuteScalarAsync(cancellationToken));
+                    var maxNumber = Convert.ToInt32(await maxPeopleCommand.ExecuteScalarAsync(cancellationToken));
                     if (!(currentNumber < maxNumber))
                     {
                         throw new NoSpotsLeftException(tripId);
                     }
                     
                     await using var addClientTripCommand = new SqlCommand(addClientTripQuery, connection);
+                    var formattedDate = int.Parse(_dateTimeProvider.UtcNow.ToString("yyyyMMdd"));
                     addClientTripCommand.Parameters.AddWithValue("@idClient", clientId);
                     addClientTripCommand.Parameters.AddWithValue("@idTrip", tripId);
-                    addClientTripCommand.Parameters.AddWithValue("@registeredAt", _dateTimeProvider.UtcNow);
+                    addClientTripCommand.Parameters.AddWithValue("@registeredAt", formattedDate);
                     addClientTripCommand.Parameters.AddWithValue("@paymentDate", DBNull.Value);
                     
-                    var rowsAffected = Convert.ToInt32(await addClientTripCommand.ExecuteScalarAsync(cancellationToken));
+                    var rowsAffected = await addClientTripCommand.ExecuteNonQueryAsync(cancellationToken);
                     return rowsAffected > 0;
                 }
             }
@@ -70,15 +72,15 @@ public class TripService : ITripService
     public async Task<bool> DeleteClientRegistration(int clientId, int tripId, CancellationToken cancellationToken)
     {
         const string query = """
-                                DELETE FROM ClientTrip WHERE IdClient == @clientId AND IdTrip == @tripId;
+                                DELETE FROM Client_Trip WHERE IdClient = @clientId AND IdTrip = @tripId;
                              """;
         using (SqlConnection connection = new SqlConnection(_connectionString))
         using (var command = new SqlCommand(query, connection))
         {
+            await connection.OpenAsync(cancellationToken);
             command.Parameters.AddWithValue("@clientId", clientId);
             command.Parameters.AddWithValue("@tripId", tripId);
-
-            await connection.OpenAsync(cancellationToken);
+            
             int rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
             return rowsAffected > 0;
         }
@@ -101,6 +103,7 @@ public class TripService : ITripService
         {
             await using (SqlCommand command = new(query, connection))
             {
+                await connection.OpenAsync(cancellationToken);
                 await using var reader = await command.ExecuteReaderAsync(cancellationToken);
                 while (await reader.ReadAsync(cancellationToken))
                 {
@@ -121,7 +124,7 @@ public class TripService : ITripService
         return trips;
     }
 
-    private async void ValidateTripExistsAsync(int id, CancellationToken cancellationToken)
+    private async Task ValidateTripExistsAsync(int id, CancellationToken cancellationToken)
     {
         var exists = await TripExistsByIdAsync(id, cancellationToken);
         if (!exists) throw new NoSuchTripException(id);
@@ -147,8 +150,26 @@ public class TripService : ITripService
         }
     }
 
-    private async void ValidateClientExistsAsync(int id, CancellationToken cancellationToken)
+    private async Task ValidateClientExistsAsync(int id, CancellationToken cancellationToken)
     {
         await _clientService.ClientExistsByIdAsync(id, cancellationToken);
+    }
+
+    public async Task ValidateNoSuchClientTripExistsAsync(int clientId, int tripId, CancellationToken cancellationToken)
+    {
+        const string query = """
+                                SELECT 
+                             IIF(EXISTS (SELECT 1 FROM Client_Trip 
+                                     WHERE Client_Trip.IdTrip = @tripId AND Client_Trip.IdClient = @clientId), 1, 0) AS Client_TripExists;
+                             """;
+        using (SqlConnection connection = new(_connectionString))
+        using (SqlCommand command = new SqlCommand(query, connection))
+        {
+            await connection.OpenAsync(cancellationToken);
+            command.Parameters.AddWithValue("@tripId", tripId);
+            command.Parameters.AddWithValue("@clientId", clientId);
+            var exists = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+            if (exists == 1) throw new ClientIsAlreadyRegisteredForTrip(clientId, tripId);
+        }
     }
 }
