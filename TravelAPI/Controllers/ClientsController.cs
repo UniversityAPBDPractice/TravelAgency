@@ -23,7 +23,7 @@ public class ClientsController : ControllerBase
     [ProducesResponseType(typeof(ICollection<ClientTrip>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> GetAllClientTripsAsync([FromRoute] int clientId,
+    public async Task<IActionResult> GetAllClientTrips([FromRoute] int clientId,
         CancellationToken cancellationToken = default)
     {
         try
@@ -47,7 +47,8 @@ public class ClientsController : ControllerBase
         try
         {
             var clientId = await _clientService.CreateClientAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetAllClientTripsAsync), new { clientId }, clientId);
+
+            return CreatedAtAction(nameof(GetAllClientTrips), new { clientId }, new { clientId });
         }
         catch (ClientAlreadyExistsException)
         {
@@ -60,10 +61,10 @@ public class ClientsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> UpdateClientTripAsync(
-        [FromRoute] int clientId, 
+        [FromRoute] int clientId,
         [FromRoute] int tripId,
         CancellationToken cancellationToken = default
-        )
+    )
     {
         try
         {
@@ -86,6 +87,7 @@ public class ClientsController : ControllerBase
             return NotFound($"Client with id: {clientId} does not exist");
         }
     }
+
     private ObjectResult CreateProblemResult(int statusCode, string detail)
     {
         return new ObjectResult(new ProblemDetails

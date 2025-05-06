@@ -19,7 +19,7 @@ public class ClientService : IClientService
     public async Task<ICollection<ClientTrip>> GetAllClientTripsAsync(int id, CancellationToken cancellationToken)
     {
         var clientTrips = new List<ClientTrip>();
-        ValidateClientExistsAsync(id, cancellationToken);
+        await ValidateClientExistsAsync(id, cancellationToken);
         const string query = """
                        SELECT
                            t.IdTrip AS TripId,
@@ -86,7 +86,7 @@ public class ClientService : IClientService
 
     public async Task<int> CreateClientAsync(CreateClientRequest clientRequest, CancellationToken cancellationToken)
     {
-        ValidateClientExistsAsync(clientRequest.Pesel, cancellationToken);
+        await ValidateClientExistsAsync(clientRequest.Pesel, cancellationToken);
         const string query = """
                              INSERT INTO Client(FirstName, LastName, Email, Telephone, Pesel)
                              VALUES (@FirstName, @LastName, @Email, @Telephone, @Pesel)
@@ -96,6 +96,7 @@ public class ClientService : IClientService
         {
             await using (SqlCommand command = new SqlCommand(query, connection))
             {
+                await connection.OpenAsync(cancellationToken);
                 command.Parameters.AddWithValue("@FirstName", clientRequest.FirstName);
                 command.Parameters.AddWithValue("@LastName", clientRequest.LastName);
                 command.Parameters.AddWithValue("@Email", clientRequest.Email);
@@ -108,25 +109,26 @@ public class ClientService : IClientService
         }
     }
 
-    public async void ValidateClientExistsAsync(int id, CancellationToken cancellationToken)
+    public async Task ValidateClientExistsAsync(int id, CancellationToken cancellationToken)
     {
         var exists = await ClientExistsByIdAsync(id, cancellationToken);
         if (!exists) throw new NoSuchClientException(id);
     }
     
-    public async void ValidateClientExistsAsync(string pesel, CancellationToken cancellationToken)
+    public async Task ValidateClientExistsAsync(string pesel, CancellationToken cancellationToken)
     {
         var exists = await ClientExistsByPeselAsync(pesel, cancellationToken);
+        Console.WriteLine(exists);
         if (exists) throw new ClientAlreadyExistsException(pesel);
     }
 
     public async ValueTask<bool> ClientExistsByIdAsync(int id, CancellationToken cancellationToken)
     {
-        const string query = """"
+        const string query = """
                              SELECT 
                                  IIF(EXISTS (SELECT 1 FROM Client 
                                          WHERE Client.IdClient = @clientId), 1, 0) AS ClientExists;
-                             """";
+                             """;
         await using (var connection = new SqlConnection(_connectionString))
         {
             await using (var command = new SqlCommand(query, connection))
@@ -142,11 +144,11 @@ public class ClientService : IClientService
 
     public async ValueTask<bool> ClientExistsByPeselAsync(string pesel, CancellationToken cancellationToken)
     {
-        const string query = """"
+        const string query = """
                              SELECT 
                                  IIF(EXISTS (SELECT 1 FROM Client 
-                                         WHERE Client.Pesel = @clientPesel), 1, 0) AS ClientExists;
-                             """";
+                                         WHERE Client.Pesel = @clientPesel), 1, 0) AS ClientExists
+                             """;
         await using (var connection = new SqlConnection(_connectionString))
         {
             await using (var command = new SqlCommand(query, connection))
